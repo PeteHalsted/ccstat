@@ -66,6 +66,19 @@ export interface LoadedUsageEntry {
   readonly costUSD: number;
 }
 
+// Context calculation data (parallel to existing context system)
+export interface ParallelContextSessionData {
+  sessionId: string;
+  cacheReadTokens: number;
+  inputTokens: number;
+  mostRecentTimestamp: Date;
+}
+
+export interface LoadUsageResult {
+  entries: LoadedUsageEntry[];
+  contextSessions: ParallelContextSessionData[];
+}
+
 export interface SessionData {
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
@@ -148,7 +161,7 @@ export function extractProjectFromPath(jsonlPath: string): string {
 // Load usage entries using EXACT ccusage validation logic
 export async function loadUsageEntries(
   debugOutput: boolean = false,
-): Promise<LoadedUsageEntry[]> {
+): Promise<LoadUsageResult> {
   if (debugOutput) {
     console.log(
       `DEBUG: Starting loadUsageEntries with debugOutput=${debugOutput}`,
@@ -169,6 +182,9 @@ export async function loadUsageEntries(
 
   // Track processed message+request combinations for deduplication - COPIED FROM CCUSAGE
   const processedHashes = new Set<string>();
+
+  // Parallel context calculation - track context data per project
+  const contextSessionsMap = new Map<string, ParallelContextSessionData>();
 
   for (const claudeDir of claudeDirs) {
     const projects = fs.readdirSync(claudeDir);
@@ -239,7 +255,33 @@ export async function loadUsageEntries(
               // Mark this combination as processed
               markAsProcessed(uniqueHash, processedHashes);
 
+              // Parallel context calculation - same logic as context-data-reader.ts
               const projectName = extractProjectFromPath(filePath);
+              const timestamp = new Date(data.timestamp);
+              const usage = data.message.usage;
+
+              if (!contextSessionsMap.has(projectName)) {
+                contextSessionsMap.set(projectName, {
+                  sessionId: projectName,
+                  cacheReadTokens: 0,
+                  inputTokens: 0,
+                  mostRecentTimestamp: new Date(0),
+                });
+              }
+
+              const contextSession = contextSessionsMap.get(projectName)!;
+
+              // Replicate exact context reader logic
+              if (
+                usage.cache_read_input_tokens &&
+                usage.cache_read_input_tokens > 0 &&
+                timestamp >= contextSession.mostRecentTimestamp
+              ) {
+                contextSession.cacheReadTokens = usage.cache_read_input_tokens;
+                contextSession.mostRecentTimestamp = timestamp;
+              }
+              // Sum input tokens for fallback
+              contextSession.inputTokens += usage.input_tokens || 0;
 
               entries.push({
                 timestamp: new Date(data.timestamp),
@@ -265,12 +307,19 @@ export async function loadUsageEntries(
     }
   }
 
-  return entries;
+  // Convert context sessions map to array
+  const contextSessions = Array.from(contextSessionsMap.values());
+
+  return {
+    entries,
+    contextSessions,
+  };
 }
 
 // Aggregate session data for context calculation
 export async function aggregateSessionData(): Promise<SessionData> {
-  const entries = await loadUsageEntries();
+  const result = await loadUsageEntries();
+  const entries = result.entries;
 
   if (entries.length === 0) {
     return {

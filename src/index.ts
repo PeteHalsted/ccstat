@@ -4,10 +4,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { loadUsageEntries } from "./data-loader-simple.js";
+import {
+  loadUsageEntries,
+  type ParallelContextSessionData,
+} from "./data-loader-simple.js";
 import { identifySessionBlocks } from "./session-blocks-simple.js";
 import { readOnlyDataAccess } from "./data-access.js";
-import { contextDataReader } from "./context-data-reader.js";
 import {
   loadConfig,
   getEffectiveTokenLimit,
@@ -175,16 +177,31 @@ async function main() {
 
   while (true) {
     try {
-      // Use ccusage's exact data loading logic for blocks, but keep isolated context calculation
-      const [entries, contextSessions, gitBranch, pwd] = await Promise.all([
-        loadUsageEntries(config.DEBUG_OUTPUT), // Now uses ccusage's exact validation logic for blocks
-        contextDataReader.getContextSessionData(), // ISOLATED for context only
+      // Use ccusage's exact data loading logic for blocks with integrated context calculation
+      const [usageResult, gitBranch, pwd] = await Promise.all([
+        loadUsageEntries(config.DEBUG_OUTPUT), // Includes optimized parallel context calculation
         getGitBranch(),
         execPromise("pwd"),
       ]);
 
-      // Use ccusage's exact session blocks logic
-      const blocks = identifySessionBlocks(entries);
+      const entries = usageResult.entries;
+      const contextSessions = usageResult.contextSessions; // Now using parallel calculation
+
+      if (config.DEBUG_OUTPUT) {
+        console.log(
+          `DEBUG: Found ${contextSessions.length} context sessions (optimized calculation)`,
+        );
+        console.log(
+          `DEBUG: Context sessions:`,
+          contextSessions.map((s) => `${s.sessionId}: ${s.cacheReadTokens}`),
+        );
+      }
+
+      // Use ccusage's exact session blocks logic with configured duration
+      const blocks = identifySessionBlocks(
+        entries,
+        config.DEFAULT_SESSION_DURATION_HOURS,
+      );
 
       if (config.DEBUG_OUTPUT) {
         console.log(`DEBUG: Total entries loaded: ${entries.length}`);
@@ -194,12 +211,36 @@ async function main() {
         );
       }
 
-      // Smart project detection: try current dir, then parent dirs
+      // Smart project detection: try current dir, then parent dirs (using optimized data)
       const currentPath = pwd.stdout.trim();
-      const activeContextSession = contextDataReader.findContextSessionByPath(
-        contextSessions,
-        currentPath,
-      );
+      let activeContextSession: ParallelContextSessionData | undefined =
+        undefined;
+      const pathParts = currentPath.split("/");
+      // Try current directory and walk up the tree (same logic as original)
+      for (let i = pathParts.length; i > 0; i--) {
+        const testPath = pathParts.slice(0, i).join("/");
+        const testProjName = testPath.split("/").pop() || "";
+        const normalizedProjName = testProjName.replace(/\./g, "-");
+        const foundSession = contextSessions.find(
+          (s) => s.sessionId && s.sessionId.includes(normalizedProjName),
+        );
+        if (foundSession) {
+          activeContextSession = foundSession;
+          break; // Return first match just like original
+        }
+      }
+
+      if (config.DEBUG_OUTPUT) {
+        console.log(`DEBUG: Context sessions count: ${contextSessions.length}`);
+        console.log(`DEBUG: Current path: ${currentPath}`);
+        console.log(
+          `DEBUG: Found activeContextSession:`,
+          activeContextSession
+            ? `${activeContextSession.sessionId}: ${activeContextSession.cacheReadTokens}`
+            : "null",
+        );
+      }
+
       const activeBlock = blocks.find((block) => block.isActive);
 
       // Constants from config
@@ -218,9 +259,10 @@ async function main() {
         const h = Math.floor(remainingMinutes / 60);
         const m = Math.round(remainingMinutes % 60);
 
-        // Progress bar shows how much of the 5 hours has been USED
-        const usedMinutes = config.MAX_BLOCK_MINUTES - remainingMinutes;
-        const timePct = (usedMinutes * 100) / config.MAX_BLOCK_MINUTES;
+        // Progress bar shows how much of the block duration has been USED
+        const maxBlockMinutes = config.DEFAULT_SESSION_DURATION_HOURS * 60;
+        const usedMinutes = maxBlockMinutes - remainingMinutes;
+        const timePct = (usedMinutes * 100) / maxBlockMinutes;
         const timeBar = progressBar(timePct);
         const timeText = `⏰ ${h}h ${m}m left`;
         timeDisplay = `${timeText} [${timeBar}]`;
@@ -318,6 +360,17 @@ async function main() {
       console.log(
         `  ${burnRateDisplay} | ${usedDisplay} | ${projectedDisplay}\x1B[K`,
       );
+
+      // Debug context calculation info
+      if (config.DEBUG_OUTPUT && activeContextSession) {
+        console.log("\n=== CONTEXT CALCULATION (OPTIMIZED) ===");
+        console.log(`  sessionId: ${activeContextSession.sessionId}`);
+        console.log(
+          `  cacheReadTokens: ${activeContextSession.cacheReadTokens}`,
+        );
+        console.log(`  inputTokens: ${activeContextSession.inputTokens}`);
+        console.log("=====================================\n");
+      }
 
       // DEBUG: Show debug info AFTER status display
       if (activeBlock && config.DEBUG_OUTPUT) {

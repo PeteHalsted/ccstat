@@ -19,11 +19,9 @@ export interface CcstatConfig {
   BURN_RATE_HIGH_THRESHOLD: number;
   BURN_RATE_MODERATE_THRESHOLD: number;
   REFRESH_INTERVAL_MS: number;
-  MAX_BLOCK_MINUTES: number;
   DEFAULT_SESSION_DURATION_HOURS: number;
   MAX_CONTEXT_TOKENS: number;
   PROJECTED_TOKEN_LIMIT: number;
-  BLOCKS_WARNING_THRESHOLD: number;
   TIME_WARNING_THRESHOLD: number;
   TIME_CRITICAL_THRESHOLD: number;
   USAGE_WARNING_THRESHOLD: number;
@@ -41,11 +39,9 @@ const DEFAULT_CONFIG: CcstatConfig = {
   BURN_RATE_HIGH_THRESHOLD: 1000, // tokens/min for high burn rate warning
   BURN_RATE_MODERATE_THRESHOLD: 500, // tokens/min for moderate burn rate warning
   REFRESH_INTERVAL_MS: 1000, // status refresh interval
-  MAX_BLOCK_MINUTES: 300, // 5 hours in minutes
   DEFAULT_SESSION_DURATION_HOURS: 5, // Claude's billing block duration
   MAX_CONTEXT_TOKENS: 200000, // Maximum context tokens for Claude
   PROJECTED_TOKEN_LIMIT: 101685800, // Projected token limit for quota warnings
-  BLOCKS_WARNING_THRESHOLD: 0.8, // 80% threshold for showing usage warnings
   TIME_WARNING_THRESHOLD: 80, // 80% time usage warning threshold
   TIME_CRITICAL_THRESHOLD: 90, // 90% time usage critical threshold
   USAGE_WARNING_THRESHOLD: 80, // 80% token usage warning threshold
@@ -98,8 +94,6 @@ export async function loadConfig(): Promise<CcstatConfig> {
         DEFAULT_CONFIG.BURN_RATE_MODERATE_THRESHOLD,
       REFRESH_INTERVAL_MS:
         config.REFRESH_INTERVAL_MS ?? DEFAULT_CONFIG.REFRESH_INTERVAL_MS,
-      MAX_BLOCK_MINUTES:
-        config.MAX_BLOCK_MINUTES ?? DEFAULT_CONFIG.MAX_BLOCK_MINUTES,
       DEFAULT_SESSION_DURATION_HOURS:
         config.DEFAULT_SESSION_DURATION_HOURS ??
         DEFAULT_CONFIG.DEFAULT_SESSION_DURATION_HOURS,
@@ -107,9 +101,6 @@ export async function loadConfig(): Promise<CcstatConfig> {
         config.MAX_CONTEXT_TOKENS ?? DEFAULT_CONFIG.MAX_CONTEXT_TOKENS,
       PROJECTED_TOKEN_LIMIT:
         config.PROJECTED_TOKEN_LIMIT ?? DEFAULT_CONFIG.PROJECTED_TOKEN_LIMIT,
-      BLOCKS_WARNING_THRESHOLD:
-        config.BLOCKS_WARNING_THRESHOLD ??
-        DEFAULT_CONFIG.BLOCKS_WARNING_THRESHOLD,
       TIME_WARNING_THRESHOLD:
         config.TIME_WARNING_THRESHOLD ?? DEFAULT_CONFIG.TIME_WARNING_THRESHOLD,
       TIME_CRITICAL_THRESHOLD:
@@ -127,7 +118,9 @@ export async function loadConfig(): Promise<CcstatConfig> {
       CONTEXT_CRITICAL_THRESHOLD:
         config.CONTEXT_CRITICAL_THRESHOLD ??
         DEFAULT_CONFIG.CONTEXT_CRITICAL_THRESHOLD,
-      DEBUG_OUTPUT: config.DEBUG_OUTPUT ?? DEFAULT_CONFIG.DEBUG_OUTPUT,
+      DEBUG_OUTPUT:
+        (process.env.DEBUG_OUTPUT === "true" || config.DEBUG_OUTPUT) ??
+        DEFAULT_CONFIG.DEBUG_OUTPUT,
     };
 
     // If we loaded from legacy location, migrate to XDG location
