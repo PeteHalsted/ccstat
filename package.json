@@ -1,0 +1,28 @@
+{
+	"name": "ccstat-standalone",
+	"version": "1.0.0",
+	"description": "Standalone Claude Code usage status monitor",
+	"type": "module",
+	"main": "dist/index.js",
+	"bin": {
+		"ccstat-standalone": "./dist/index.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"dev": "tsc && node dist/index.js",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"path-type": "^5.0.0",
+		"tinyglobby": "^0.2.9",
+		"xdg-basedir": "^5.1.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"typescript": "^5.0.0"
+	},
+	"engines": {
+		"node": ">=18"
+	}
+}
