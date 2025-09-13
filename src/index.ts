@@ -4,22 +4,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  loadUsageEntries,
-  aggregateSessionData,
-  getTotalTokens,
-} from "./data-loader-simple.js";
-import {
-  identifySessionBlocks,
-  calculateBurnRate,
-  projectBlockUsage,
-} from "./session-blocks-simple.js";
-import {
-  MAX_CONTEXT_TOKENS,
-  MAX_BLOCK_MINUTES,
-  PROJECTED_TOKEN_LIMIT,
-  USER_HOME_DIR,
-} from "./constants.js";
+import { readOnlyDataAccess } from "./data-access.js";
+import { contextDataReader } from "./context-data-reader.js";
+import { USER_HOME_DIR } from "./constants.js";
 
 const execPromise = promisify(exec);
 
@@ -73,44 +60,30 @@ async function main() {
 
   while (true) {
     try {
-      // --- 1. Get Data Directly ---
-      const [entries, sessions, gitBranch, pwd] = await Promise.all([
-        loadUsageEntries(),
-        aggregateSessionData(),
+      // --- 1. Get Data Using Isolated Systems ---
+      const [entries, contextSessions, gitBranch, pwd] = await Promise.all([
+        readOnlyDataAccess.getUsageEntries(), // For burn/usage calculations
+        contextDataReader.getContextSessionData(), // ISOLATED for context only
         getGitBranch(),
         execPromise("pwd"),
       ]);
 
       // Filter entries to match ccusage --since 20250912 behavior
       const sinceDate = new Date("2025-09-12T00:00:00.000Z");
-      const filteredEntries = entries.filter(
-        (entry) => entry.timestamp >= sinceDate,
+      const filteredEntries = readOnlyDataAccess.filterEntriesSince(
+        entries,
+        sinceDate,
       );
 
-      const blocks = identifySessionBlocks(filteredEntries);
+      const blocks = readOnlyDataAccess.getSessionBlocks(filteredEntries);
 
       // Smart project detection: try current dir, then parent dirs
       const currentPath = pwd.stdout.trim();
-      let activeSession = null;
-
-      // Try current directory and walk up the tree
-      const pathParts = currentPath.split("/");
-      for (let i = pathParts.length; i > 0; i--) {
-        const testPath = pathParts.slice(0, i).join("/");
-        const testProjName = path.basename(testPath);
-        const normalizedProjName = testProjName.replace(/\./g, "-");
-
-        const foundSession = sessions.find(
-          (s) => s.sessionId && s.sessionId.includes(normalizedProjName),
-        );
-
-        if (foundSession) {
-          activeSession = foundSession;
-          break;
-        }
-      }
-
-      const activeBlock = blocks.find((b) => b.isActive);
+      const activeContextSession = contextDataReader.findContextSessionByPath(
+        contextSessions,
+        currentPath,
+      );
+      const activeBlock = readOnlyDataAccess.findActiveBlock(blocks);
 
       // --- 2. Extract and Format Data ---
       let timeDisplay = colorize("yellow", "⏰ N/A");
@@ -121,61 +94,21 @@ async function main() {
       let projectedDisplay = colorize("green", "Projected: 0%");
 
       if (activeBlock) {
-        const projection = projectBlockUsage(activeBlock);
-
-        // DEBUG: Show actual token counts being used
-        const blockTokens = getTotalTokens(activeBlock.tokenCounts);
-        console.error(`DEBUG BLOCK TOKENS:`);
-        console.error(
-          `  Input: ${activeBlock.tokenCounts.inputTokens?.toLocaleString() || 0}`,
-        );
-        console.error(
-          `  Output: ${activeBlock.tokenCounts.outputTokens?.toLocaleString() || 0}`,
-        );
-        console.error(
-          `  Cache Creation: ${activeBlock.tokenCounts.cacheCreationInputTokens?.toLocaleString() || 0}`,
-        );
-        console.error(
-          `  Cache Read: ${activeBlock.tokenCounts.cacheReadInputTokens?.toLocaleString() || 0}`,
-        );
-        console.error(`  TOTAL BLOCK: ${blockTokens.toLocaleString()}`);
-        console.error(`  Entries: ${activeBlock.entries.length}`);
-        console.error(
-          `  Token Limit: ${PROJECTED_TOKEN_LIMIT.toLocaleString()}`,
-        );
-        console.error(
-          `  Usage %: ${Math.round((blockTokens * 100) / PROJECTED_TOKEN_LIMIT)}%`,
-        );
-        if (projection) {
-          console.error(
-            `  Projected Total: ${projection.totalTokens.toLocaleString()}`,
-          );
-          console.error(
-            `  Projected %: ${Math.round((projection.totalTokens * 100) / PROJECTED_TOKEN_LIMIT)}%`,
-          );
-        }
+        const projection = readOnlyDataAccess.getProjectedUsage(activeBlock);
+        const constants = readOnlyDataAccess.getConstants();
         const remainingMinutes = projection?.remainingMinutes ?? 0;
         const h = Math.floor(remainingMinutes / 60);
-        const m = remainingMinutes % 60;
-        const timePct = (remainingMinutes * 100) / MAX_BLOCK_MINUTES;
+        const m = Math.round(remainingMinutes % 60);
+
+        // Progress bar shows how much of the 5 hours has been USED
+        const usedMinutes = constants.MAX_BLOCK_MINUTES - remainingMinutes;
+        const timePct = (usedMinutes * 100) / constants.MAX_BLOCK_MINUTES;
         const timeBar = progressBar(timePct);
         const timeText = `⏰ ${h}h ${m}m left`;
         timeDisplay = `${timeText} [${timeBar}]`;
 
-        const burnRate = calculateBurnRate(activeBlock);
+        const burnRate = readOnlyDataAccess.getBurnRate(activeBlock);
         const tokensPerMinute = burnRate?.tokensPerMinuteForIndicator || 0;
-
-        // DEBUG: Show burn rate calculation details
-        console.error(`DEBUG BURN RATE:`);
-        console.error(
-          `  Tokens/min: ${burnRate?.tokensPerMinute?.toLocaleString() || "null"}`,
-        );
-        console.error(
-          `  Tokens/min (indicator): ${tokensPerMinute.toLocaleString()}`,
-        );
-        console.error(
-          `  Cost/hour: $${burnRate?.costPerHour?.toFixed(2) || "null"}`,
-        );
 
         if (tokensPerMinute > 5000)
           burnRateStatus = colorize("red", "🚨 (High)");
@@ -185,25 +118,29 @@ async function main() {
         const tokensPerMin = Math.round(burnRate?.tokensPerMinute || 0);
         burnRateDisplay = `${tokensPerMin.toLocaleString()} tokens/min`;
 
-        const blockTotalTokens = getTotalTokens(activeBlock.tokenCounts);
+        const blockTotalTokens = readOnlyDataAccess.getTotalTokens(
+          activeBlock.tokenCounts,
+        );
         const usedPct = Math.round(
-          (blockTotalTokens * 100) / PROJECTED_TOKEN_LIMIT,
+          (blockTotalTokens * 100) / constants.PROJECTED_TOKEN_LIMIT,
         );
         usedDisplay = `Used: ${usedPct}%`;
 
         const projectedTokens = projection?.totalTokens || 0;
         const projectedPct = Math.round(
-          (projectedTokens * 100) / PROJECTED_TOKEN_LIMIT,
+          (projectedTokens * 100) / constants.PROJECTED_TOKEN_LIMIT,
         );
         projectedDisplay = `Projected: ${projectedPct}%`;
 
         const timeColor =
-          projectedPct >= 90 ? "red" : projectedPct >= 80 ? "yellow" : "green";
+          timePct >= 90 ? "red" : timePct >= 80 ? "yellow" : "green";
         const usedColor =
           usedPct >= 90 ? "red" : usedPct >= 80 ? "yellow" : "green";
+        const projectedColor =
+          projectedPct >= 90 ? "red" : projectedPct >= 80 ? "yellow" : "green";
         timeDisplay = colorize(timeColor, timeDisplay);
         usedDisplay = colorize(usedColor, usedDisplay);
-        projectedDisplay = colorize(timeColor, projectedDisplay);
+        projectedDisplay = colorize(projectedColor, projectedDisplay);
 
         if (blockTotalTokens > high_water_mark) {
           high_water_mark = blockTotalTokens;
@@ -211,12 +148,15 @@ async function main() {
         }
       }
 
-      if (activeSession) {
+      if (activeContextSession) {
         // For ACP sessions, use cache_read_tokens as the real context usage
         const currentTokens =
-          activeSession.cacheReadTokens || activeSession.inputTokens || 0;
+          activeContextSession.cacheReadTokens ||
+          activeContextSession.inputTokens ||
+          0;
+        const contextConstants = contextDataReader.getContextConstants();
         const contextPct = Math.round(
-          (currentTokens * 100) / MAX_CONTEXT_TOKENS,
+          (currentTokens * 100) / contextConstants.MAX_CONTEXT_TOKENS,
         );
         const contextBar = progressBar(contextPct);
         const contextText = `🧠 ${currentTokens.toLocaleString()} (${contextPct}%)`;
@@ -239,8 +179,60 @@ async function main() {
       console.log(
         `  ${burnRateDisplay} ${burnRateStatus} | ${usedDisplay} | ${projectedDisplay}`,
       );
+
+      // DEBUG: Show debug info AFTER status display
+      if (activeBlock) {
+        const projection = readOnlyDataAccess.getProjectedUsage(activeBlock);
+        const blockTokens = readOnlyDataAccess.getTotalTokens(
+          activeBlock.tokenCounts,
+        );
+        const constants = readOnlyDataAccess.getConstants();
+        const burnRate = readOnlyDataAccess.getBurnRate(activeBlock);
+        const tokensPerMinute = burnRate?.tokensPerMinuteForIndicator || 0;
+
+        console.log(`\nDEBUG BLOCK TOKENS:`);
+        console.log(
+          `  Input: ${activeBlock.tokenCounts.inputTokens?.toLocaleString() || 0}`,
+        );
+        console.log(
+          `  Output: ${activeBlock.tokenCounts.outputTokens?.toLocaleString() || 0}`,
+        );
+        console.log(
+          `  Cache Creation: ${activeBlock.tokenCounts.cacheCreationInputTokens?.toLocaleString() || 0}`,
+        );
+        console.log(
+          `  Cache Read: ${activeBlock.tokenCounts.cacheReadInputTokens?.toLocaleString() || 0}`,
+        );
+        console.log(`  TOTAL BLOCK: ${blockTokens.toLocaleString()}`);
+        console.log(`  Entries: ${activeBlock.entries.length}`);
+        console.log(
+          `  Token Limit: ${constants.PROJECTED_TOKEN_LIMIT.toLocaleString()}`,
+        );
+        console.log(
+          `  Usage %: ${Math.round((blockTokens * 100) / constants.PROJECTED_TOKEN_LIMIT)}%`,
+        );
+        if (projection) {
+          console.log(
+            `  Projected Total: ${projection.totalTokens.toLocaleString()}`,
+          );
+          console.log(
+            `  Projected %: ${Math.round((projection.totalTokens * 100) / constants.PROJECTED_TOKEN_LIMIT)}%`,
+          );
+        }
+
+        console.log(`\nDEBUG BURN RATE:`);
+        console.log(
+          `  Tokens/min: ${burnRate?.tokensPerMinute?.toLocaleString() || "null"}`,
+        );
+        console.log(
+          `  Tokens/min (indicator): ${tokensPerMinute.toLocaleString()}`,
+        );
+        console.log(
+          `  Cost/hour: $${burnRate?.costPerHour?.toFixed(2) || "null"}`,
+        );
+      }
     } catch (error) {
-      console.error(
+      console.log(
         "Error updating status:",
         error instanceof Error ? error.message : "Unknown error",
       );
