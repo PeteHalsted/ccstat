@@ -1,11 +1,11 @@
 {
-  "name": "ccstat-standalone",
+  "name": "ccstat-acp",
   "version": "1.0.0",
-  "description": "Standalone Claude Code usage status monitor",
+  "description": "Claude Code usage status monitor",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "ccstat-standalone": "./dist/index.js"
+    "ccstat-acp": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -17,7 +17,8 @@
     "format": "biome format src/",
     "format:fix": "biome format --write src/",
     "check": "biome check src/",
-    "check:fix": "biome check --write src/"
+    "check:fix": "biome check --write src/",
+    "prepublishOnly": "npm run clean && npm run build && npm run check"
   },
   "dependencies": {
     "es-toolkit": "^1.39.10",
@@ -33,5 +34,30 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeteHalsted/ccstat.git"
+  },
+  "homepage": "https://github.com/PeteHalsted/ccstat#readme",
+  "bugs": {
+    "url": "https://github.com/PeteHalsted/ccstat/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "usage",
+    "monitor",
+    "cli",
+    "tokens",
+    "status",
+    "anthropic"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ]
 }

@@ -1,36 +1,37 @@
 # Changelog
 
-All notable changes to ccstat will be documented in this file.
+All notable changes to ccstat-acp will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### 🧹 Code Cleanup
-- **Dead Code Removal**: Eliminated orphaned constants, unused imports, and completely unused files
-  - Removed `MAX_BLOCK_MINUTES`, `BLOCKS_WARNING_THRESHOLD`, and `PROJECTED_TOKEN_LIMIT` constants (unused)
-  - Deleted orphaned files: `src/data-access.ts` and `src/context-calculator.ts` (no imports found)
-  - Cleaned up duplicate `homedir` imports across multiple files
-  - Consolidated all files to use `USER_HOME_DIR` from constants for consistency
-- **Import Optimization**: Streamlined import structure with no duplicates or unused imports
-- **Maintainability**: Cleaner, more maintainable codebase with preserved functionality
+### Changed
+- **BREAKING**: Renamed package from "ccstat" to "ccstat-acp" for npm publication
+- Removed all references to "standalone" terminology from codebase and documentation
+- Updated CLAUDE.md to reflect new package name and cleaner project overview
+- Cleaned up .gitignore to ignore CLAUDE.md (development-only file)
 
-### ⚡ Performance Improvements
-- **Major Performance Optimization**: Eliminated duplicate file reading by implementing parallel context calculation that integrates context data processing with block data processing
-- System now reads usage files once instead of twice, significantly improving startup and refresh performance
-- Maintained complete context calculation isolation and accuracy while optimizing execution
+### Added
+- LICENSE file with MIT license and attribution to ccusage project
+- README.md with comprehensive usage instructions and npm installation guide
+- PUBLISHING.md with detailed npm publishing workflow documentation
+- .npmignore file to properly exclude development files from npm package
+- assets/ directory prepared for screenshots and documentation assets
+- package-lock.json updated for new package name
 
-### 🔧 Configuration Improvements  
-- **Config Cleanup**: Removed unused configuration values (`BLOCKS_WARNING_THRESHOLD`, `MAX_BLOCK_MINUTES`) 
-- **Enhanced Configuration**: Now properly uses `DEFAULT_SESSION_DURATION_HOURS` (5 hours) to calculate block duration (300 minutes) instead of storing redundant values
-- **Environment Variable Support**: Added `DEBUG_OUTPUT` environment variable support for debugging control
-- **Fixed Configuration**: Resolved corrupted config file that became 0 bytes due to interface changes
+### Removed
+- archon.md (Archon-specific documentation no longer needed)
+- coding-standards.md (integrated into main workflow)
+- .mcp.json (development-specific MCP configuration)
+- Legacy changelog.md (recreated with proper structure)
 
-### 🏗️ Technical Improvements
-- **Parallel Context Calculation**: Replaced isolated context reader with optimized integrated calculation that processes context data alongside usage data
-- **Type Safety**: Enhanced TypeScript interfaces with `LoadUsageResult` and `ParallelContextSessionData` for better type safety
-- **Code Consolidation**: Unified data processing pipeline while maintaining separation of concerns
-- **Debug Enhancement**: Improved debug output to show optimized context calculation details
+### Fixed
+- Package configuration now properly prepared for npm publishing
+- All internal references updated to use new "ccstat-acp" package name
+- Documentation structure simplified and focused on end-user needs
 
-### 🔍 Verification
-- Verified parallel context calculation matches original system exactly through comprehensive testing
-- Ensured all context session detection logic remains identical to original implementation
-- Maintained complete backward compatibility with existing functionality
+## Notes
+
+This release prepares the package for its first npm publication under the name "ccstat-acp". The package provides Claude Code usage monitoring with specific optimizations for ACP (Agent Client Protocol) usage in editors like Zed.

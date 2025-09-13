@@ -13,41 +13,65 @@ const LEGACY_CONFIG_FILE_PATH = path.join(USER_HOME_DIR, "ccstat.json");
 
 // Configuration structure
 export interface CcstatConfig {
+	// Token Limits
 	TOKEN_LIMIT: number;
 	OBSERVED_MAX_TOKEN: number;
 	USE_OBSERVED_IF_HIGHER: boolean;
+	PROJECTED_TOKEN_LIMIT: number;
+
+	// Context Configuration
+	MAX_CONTEXT_TOKENS: number;
+	CONTEXT_RESERVED: number;
+
+	// Session Configuration
+	DEFAULT_SESSION_DURATION_HOURS: number;
+	REFRESH_INTERVAL_MS: number;
+
+	// Burn Rate Thresholds
 	BURN_RATE_HIGH_THRESHOLD: number;
 	BURN_RATE_MODERATE_THRESHOLD: number;
-	REFRESH_INTERVAL_MS: number;
-	DEFAULT_SESSION_DURATION_HOURS: number;
-	MAX_CONTEXT_TOKENS: number;
-	PROJECTED_TOKEN_LIMIT: number;
+
+	// Warning Thresholds
 	TIME_WARNING_THRESHOLD: number;
 	TIME_CRITICAL_THRESHOLD: number;
 	USAGE_WARNING_THRESHOLD: number;
 	USAGE_CRITICAL_THRESHOLD: number;
 	CONTEXT_WARNING_THRESHOLD: number;
 	CONTEXT_CRITICAL_THRESHOLD: number;
+
+	// Debug
 	DEBUG_OUTPUT: boolean;
 }
 
 // Default configuration
 const DEFAULT_CONFIG: CcstatConfig = {
+	// Token Limits
 	TOKEN_LIMIT: 60000000, // 60M tokens
 	OBSERVED_MAX_TOKEN: 0,
 	USE_OBSERVED_IF_HIGHER: true,
+	PROJECTED_TOKEN_LIMIT: 101685800, // Projected token limit for quota warnings
+
+	// Context Configuration
+	MAX_CONTEXT_TOKENS: 200000, // Maximum context tokens for Claude
+	CONTEXT_RESERVED: 15, // Percentage of context to reserve (15% = 170k usable out of 200k)
+
+	// Session Configuration
+	DEFAULT_SESSION_DURATION_HOURS: 5, // Claude's billing block duration
+	REFRESH_INTERVAL_MS: 1000, // status refresh interval
+
+	// Burn Rate Thresholds
 	BURN_RATE_HIGH_THRESHOLD: 1000, // tokens/min for high burn rate warning
 	BURN_RATE_MODERATE_THRESHOLD: 500, // tokens/min for moderate burn rate warning
-	REFRESH_INTERVAL_MS: 1000, // status refresh interval
-	DEFAULT_SESSION_DURATION_HOURS: 5, // Claude's billing block duration
-	MAX_CONTEXT_TOKENS: 200000, // Maximum context tokens for Claude
-	PROJECTED_TOKEN_LIMIT: 101685800, // Projected token limit for quota warnings
+
+	// Warning Thresholds
 	TIME_WARNING_THRESHOLD: 80, // 80% time usage warning threshold
 	TIME_CRITICAL_THRESHOLD: 90, // 90% time usage critical threshold
 	USAGE_WARNING_THRESHOLD: 80, // 80% token usage warning threshold
 	USAGE_CRITICAL_THRESHOLD: 90, // 90% token usage critical threshold
 	CONTEXT_WARNING_THRESHOLD: 60, // 60% context usage warning threshold
 	CONTEXT_CRITICAL_THRESHOLD: 80, // 80% context usage critical threshold
+
+	// Debug
 	DEBUG_OUTPUT: false, // Show debug information
 };
 
@@ -93,6 +117,7 @@ export async function loadConfig(): Promise<CcstatConfig> {
 			DEFAULT_SESSION_DURATION_HOURS:
 				config.DEFAULT_SESSION_DURATION_HOURS ?? DEFAULT_CONFIG.DEFAULT_SESSION_DURATION_HOURS,
 			MAX_CONTEXT_TOKENS: config.MAX_CONTEXT_TOKENS ?? DEFAULT_CONFIG.MAX_CONTEXT_TOKENS,
+			CONTEXT_RESERVED: config.CONTEXT_RESERVED ?? DEFAULT_CONFIG.CONTEXT_RESERVED,
 			PROJECTED_TOKEN_LIMIT: config.PROJECTED_TOKEN_LIMIT ?? DEFAULT_CONFIG.PROJECTED_TOKEN_LIMIT,
 			TIME_WARNING_THRESHOLD:
 				config.TIME_WARNING_THRESHOLD ?? DEFAULT_CONFIG.TIME_WARNING_THRESHOLD,
@@ -155,6 +180,15 @@ export function getEffectiveTokenLimit(config: CcstatConfig): number {
 		return config.OBSERVED_MAX_TOKEN;
 	}
 	return config.TOKEN_LIMIT;
+}
+
+/**
+ * Get the effective context limit based on configuration
+ * Returns MAX_CONTEXT_TOKENS minus the reserved percentage
+ */
+export function getEffectiveContextLimit(config: CcstatConfig): number {
+	const reservedMultiplier = (100 - config.CONTEXT_RESERVED) / 100;
+	return Math.round(config.MAX_CONTEXT_TOKENS * reservedMultiplier);
 }
 
 /**

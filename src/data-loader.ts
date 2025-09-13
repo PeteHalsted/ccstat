@@ -1,4 +1,10 @@
-// COPIED EXACTLY FROM CCUSAGE data-loader.ts
+/*
+ * This file contains code derived from ccusage (https://github.com/ryoppippi/ccusage)
+ * Copyright (c) 2024 ryoppippi
+ * Licensed under the MIT License
+ *
+ * Original data loading and validation logic copied and adapted for ccstat
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";

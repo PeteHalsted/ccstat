@@ -1,10 +1,22 @@
 #!/usr/bin/env node
+/*
+ * ccstat - Claude Code usage status monitor
+ *
+ * This project contains code derived from ccusage (https://github.com/ryoppippi/ccusage)
+ * Copyright (c) 2024 ryoppippi
+ * Licensed under the MIT License
+ */
 
 import { exec } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { getEffectiveTokenLimit, loadConfig, updateObservedMaxIfHigher } from "./config.js";
+import {
+	getEffectiveContextLimit,
+	getEffectiveTokenLimit,
+	loadConfig,
+	updateObservedMaxIfHigher,
+} from "./config.js";
 import { USER_HOME_DIR } from "./constants.js";
 import { loadUsageEntries, type ParallelContextSessionData } from "./data-loader.js";
 import { identifySessionBlocks, type SessionBlock } from "./session-blocks.js";
@@ -294,7 +306,8 @@ async function main() {
 				// For ACP sessions, use cache_read_tokens as the real context usage
 				const currentTokens =
 					activeContextSession.cacheReadTokens || activeContextSession.inputTokens || 0;
-				const contextPct = Math.round((currentTokens * 100) / config.MAX_CONTEXT_TOKENS);
+				const effectiveContextLimit = getEffectiveContextLimit(config);
+				const contextPct = Math.round((currentTokens * 100) / effectiveContextLimit);
 				const contextBar = progressBar(contextPct);
 				const contextText = `🧠 ${currentTokens.toLocaleString()} (${contextPct}%)`;
 				contextDisplay = `${contextText} [${contextBar}]`;

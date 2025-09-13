@@ -1,4 +1,10 @@
-// COPIED EXACTLY FROM CCUSAGE _session-blocks.ts
+/*
+ * This file contains code derived from ccusage (https://github.com/ryoppippi/ccusage)
+ * Copyright (c) 2024 ryoppippi
+ * Licensed under the MIT License
+ *
+ * Original session block logic copied and adapted for ccstat
+ */
 import { uniq } from "es-toolkit";
 import type { LoadedUsageEntry } from "./data-loader";
 
