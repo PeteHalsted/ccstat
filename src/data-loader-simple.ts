@@ -146,12 +146,24 @@ export function extractProjectFromPath(jsonlPath: string): string {
 }
 
 // Load usage entries using EXACT ccusage validation logic
-export async function loadUsageEntries(): Promise<LoadedUsageEntry[]> {
+export async function loadUsageEntries(
+  debugOutput: boolean = false,
+): Promise<LoadedUsageEntry[]> {
+  if (debugOutput) {
+    console.log(
+      `DEBUG: Starting loadUsageEntries with debugOutput=${debugOutput}`,
+    );
+  }
+
   const home = homedir();
   const claudeDirs = [
     path.join(home, ".config", "claude", "projects"),
     path.join(home, ".claude", "projects"),
   ].filter((dir) => fs.existsSync(dir));
+
+  if (debugOutput) {
+    console.log(`DEBUG: Found Claude directories: ${claudeDirs.join(", ")}`);
+  }
 
   const entries: LoadedUsageEntry[] = [];
 
@@ -168,7 +180,39 @@ export async function loadUsageEntries(): Promise<LoadedUsageEntry[]> {
           .filter((f) => typeof f === "string" && f.endsWith(".jsonl"))
           .map((f) => path.join(projectPath, f as string));
 
+        if (debugOutput && files.length > 0) {
+          console.log(
+            `DEBUG: Found ${files.length} .jsonl files in ${projectPath}`,
+          );
+        }
+
         for (const filePath of files) {
+          // Check file modification time to skip old files
+          // Use 24 hours to be safe across all timezones
+          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+          try {
+            const fileStats = fs.statSync(filePath);
+            // File mtime is in local time, compare directly with local cutoff
+            if (fileStats.mtime < twentyFourHoursAgo) {
+              if (debugOutput) {
+                console.log(
+                  `DEBUG: Skipping old file: ${path.basename(filePath)} (modified: ${fileStats.mtime.toISOString()})`,
+                );
+              }
+              continue; // Skip files older than 24 hours
+            }
+
+            if (debugOutput) {
+              console.log(
+                `DEBUG: Reading recent file: ${path.basename(filePath)} (modified: ${fileStats.mtime.toISOString()})`,
+              );
+            }
+          } catch (error) {
+            // If we can't stat the file, skip it
+            continue;
+          }
+
           const content = fs.readFileSync(filePath, "utf8");
           const lines = content
             .trim()

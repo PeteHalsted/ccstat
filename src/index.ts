@@ -162,14 +162,22 @@ async function main() {
   // Load ccstat.json configuration
   let config = await loadConfig();
 
-  // Clear screen once at startup to handle process restarts
-  process.stdout.write("\x1B[2J\x1B[0;0H");
+  // Clear screen once at startup to handle process restarts (skip in debug mode)
+  if (!config.DEBUG_OUTPUT) {
+    process.stdout.write("\x1B[2J\x1B[0;0H");
+  }
+
+  if (config.DEBUG_OUTPUT) {
+    console.log(
+      `DEBUG: Config loaded with DEBUG_OUTPUT=${config.DEBUG_OUTPUT}`,
+    );
+  }
 
   while (true) {
     try {
       // Use ccusage's exact data loading logic for blocks, but keep isolated context calculation
       const [entries, contextSessions, gitBranch, pwd] = await Promise.all([
-        loadUsageEntries(), // Now uses ccusage's exact validation logic for blocks
+        loadUsageEntries(config.DEBUG_OUTPUT), // Now uses ccusage's exact validation logic for blocks
         contextDataReader.getContextSessionData(), // ISOLATED for context only
         getGitBranch(),
         execPromise("pwd"),
@@ -292,11 +300,13 @@ async function main() {
       }
 
       // --- Render Status Line ---
-      if (!isFirstRender) {
-        // Move cursor up 4 lines to overwrite previous status
-        process.stdout.write("\x1B[4A");
-      } else {
-        isFirstRender = false;
+      if (!config.DEBUG_OUTPUT) {
+        if (!isFirstRender) {
+          // Move cursor up 4 lines to overwrite previous status
+          process.stdout.write("\x1B[4A");
+        } else {
+          isFirstRender = false;
+        }
       }
 
       const currentDir = pwd.stdout.trim().replace(USER_HOME_DIR, "~");
