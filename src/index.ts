@@ -19,7 +19,6 @@ import { USER_HOME_DIR } from "./constants.js";
 const execPromise = promisify(exec);
 
 // ---- Configuration ----
-const REFRESH_INTERVAL_MS = 1000;
 const HIGH_WATER_MARK_FILE = path.join(
   USER_HOME_DIR,
   ".claude_status_max_tokens",
@@ -152,6 +151,7 @@ function projectBlockUsage(block: any) {
 // ---- Main Logic ----
 async function main() {
   let high_water_mark = 0;
+  let isFirstRender = true;
   try {
     const data = await readFile(HIGH_WATER_MARK_FILE, "utf8");
     high_water_mark = parseInt(data, 10) || 0;
@@ -161,9 +161,9 @@ async function main() {
 
   // Load ccstat.json configuration
   let config = await loadConfig();
-  console.log(
-    `📊 Config loaded - TOKEN_LIMIT: ${config.TOKEN_LIMIT.toLocaleString()}, OBSERVED_MAX: ${config.OBSERVED_MAX_TOKEN.toLocaleString()}, USE_OBSERVED_IF_HIGHER: ${config.USE_OBSERVED_IF_HIGHER}`,
-  );
+
+  // Clear screen once at startup to handle process restarts
+  process.stdout.write("\x1B[2J\x1B[0;0H");
 
   while (true) {
     try {
@@ -175,14 +175,16 @@ async function main() {
         execPromise("pwd"),
       ]);
 
-      console.log(`DEBUG: Total entries loaded: ${entries.length}`);
-
       // Use ccusage's exact session blocks logic
       const blocks = identifySessionBlocks(entries);
-      console.log(`DEBUG: Total blocks created: ${blocks.length}`);
-      console.log(
-        `DEBUG: Block entry counts: ${blocks.map((b) => b.entries.length).join(", ")}`,
-      );
+
+      if (config.DEBUG_OUTPUT) {
+        console.log(`DEBUG: Total entries loaded: ${entries.length}`);
+        console.log(`DEBUG: Total blocks created: ${blocks.length}`);
+        console.log(
+          `DEBUG: Block entry counts: ${blocks.map((b) => b.entries.length).join(", ")}`,
+        );
+      }
 
       // Smart project detection: try current dir, then parent dirs
       const currentPath = pwd.stdout.trim();
@@ -192,15 +194,13 @@ async function main() {
       );
       const activeBlock = blocks.find((block) => block.isActive);
 
-      // Constants copied from ccusage
-      const MAX_BLOCK_MINUTES = 300;
+      // Constants from config
       const EFFECTIVE_TOKEN_LIMIT = getEffectiveTokenLimit(config);
 
       // --- Extract and Format Data ---
       let timeDisplay = colorize("yellow", "⏰ N/A");
       let contextDisplay = colorize("green", "🧠 N/A");
-      let burnRateDisplay = "0 tokens/min";
-      let burnRateStatus = colorize("green", "🟢 (Normal)");
+      let burnRateDisplay = colorize("green", "🔥 🟢 (Normal)");
       let usedDisplay = colorize("green", "Used: 0%");
       let projectedDisplay = colorize("green", "Projected: 0%");
 
@@ -211,8 +211,8 @@ async function main() {
         const m = Math.round(remainingMinutes % 60);
 
         // Progress bar shows how much of the 5 hours has been USED
-        const usedMinutes = MAX_BLOCK_MINUTES - remainingMinutes;
-        const timePct = (usedMinutes * 100) / MAX_BLOCK_MINUTES;
+        const usedMinutes = config.MAX_BLOCK_MINUTES - remainingMinutes;
+        const timePct = (usedMinutes * 100) / config.MAX_BLOCK_MINUTES;
         const timeBar = progressBar(timePct);
         const timeText = `⏰ ${h}h ${m}m left`;
         timeDisplay = `${timeText} [${timeBar}]`;
@@ -220,13 +220,11 @@ async function main() {
         const burnRate = calculateBurnRate(activeBlock);
         const tokensPerMinute = burnRate?.tokensPerMinuteForIndicator || 0;
 
-        if (tokensPerMinute > 5000)
-          burnRateStatus = colorize("red", "🚨 (High)");
-        else if (tokensPerMinute > 2000)
-          burnRateStatus = colorize("yellow", "⚠️ (Moderate)");
-
-        const tokensPerMin = Math.round(burnRate?.tokensPerMinute || 0);
-        burnRateDisplay = `${formatTokensCompact(tokensPerMin)} tokens/min`;
+        if (tokensPerMinute > config.BURN_RATE_HIGH_THRESHOLD)
+          burnRateDisplay = colorize("red", "🔥 🚨 (High)");
+        else if (tokensPerMinute > config.BURN_RATE_MODERATE_THRESHOLD)
+          burnRateDisplay = colorize("yellow", "🔥 ⚠️ (Moderate)");
+        else burnRateDisplay = colorize("green", "🔥 🟢 (Normal)");
 
         const blockTotalTokens = getTotalTokens(activeBlock.tokenCounts);
         const usedPct = Math.round(
@@ -244,11 +242,23 @@ async function main() {
         config = await updateObservedMaxIfHigher(config, blockTotalTokens);
 
         const timeColor =
-          timePct >= 90 ? "red" : timePct >= 80 ? "yellow" : "green";
+          timePct >= config.TIME_CRITICAL_THRESHOLD
+            ? "red"
+            : timePct >= config.TIME_WARNING_THRESHOLD
+              ? "yellow"
+              : "green";
         const usedColor =
-          usedPct >= 90 ? "red" : usedPct >= 80 ? "yellow" : "green";
+          usedPct >= config.USAGE_CRITICAL_THRESHOLD
+            ? "red"
+            : usedPct >= config.USAGE_WARNING_THRESHOLD
+              ? "yellow"
+              : "green";
         const projectedColor =
-          projectedPct >= 90 ? "red" : projectedPct >= 80 ? "yellow" : "green";
+          projectedPct >= config.USAGE_CRITICAL_THRESHOLD
+            ? "red"
+            : projectedPct >= config.USAGE_WARNING_THRESHOLD
+              ? "yellow"
+              : "green";
         timeDisplay = colorize(timeColor, timeDisplay);
         usedDisplay = colorize(usedColor, usedDisplay);
         projectedDisplay = colorize(projectedColor, projectedDisplay);
@@ -265,34 +275,42 @@ async function main() {
           activeContextSession.cacheReadTokens ||
           activeContextSession.inputTokens ||
           0;
-        const contextConstants = contextDataReader.getContextConstants();
         const contextPct = Math.round(
-          (currentTokens * 100) / contextConstants.MAX_CONTEXT_TOKENS,
+          (currentTokens * 100) / config.MAX_CONTEXT_TOKENS,
         );
         const contextBar = progressBar(contextPct);
         const contextText = `🧠 ${currentTokens.toLocaleString()} (${contextPct}%)`;
         contextDisplay = `${contextText} [${contextBar}]`;
 
         const contextColor =
-          contextPct >= 80 ? "red" : contextPct >= 60 ? "yellow" : "green";
+          contextPct >= config.CONTEXT_CRITICAL_THRESHOLD
+            ? "red"
+            : contextPct >= config.CONTEXT_WARNING_THRESHOLD
+              ? "yellow"
+              : "green";
         contextDisplay = colorize(contextColor, contextDisplay);
       }
 
       // --- Render Status Line ---
-      process.stdout.write("\x1B[2J\x1B[0;0H"); // Clear screen and move to top-left
+      if (!isFirstRender) {
+        // Move cursor up 4 lines to overwrite previous status
+        process.stdout.write("\x1B[4A");
+      } else {
+        isFirstRender = false;
+      }
 
       const currentDir = pwd.stdout.trim().replace(USER_HOME_DIR, "~");
       console.log(
-        `${colorize("dir", `📁 ${currentDir}`)}  ${colorize("git", gitBranch ? `🌿 ${gitBranch}` : "")}`,
+        `  ${colorize("dir", `📁 ${currentDir}`)}  ${colorize("git", gitBranch ? `🌿 ${gitBranch}` : "")}\x1B[K`,
       );
-      console.log(`  ${timeDisplay}`);
-      console.log(`  ${contextDisplay}`);
+      console.log(`  ${timeDisplay}\x1B[K`);
+      console.log(`  ${contextDisplay}\x1B[K`);
       console.log(
-        `  ${burnRateDisplay} ${burnRateStatus} | ${usedDisplay} | ${projectedDisplay}`,
+        `  ${burnRateDisplay} | ${usedDisplay} | ${projectedDisplay}\x1B[K`,
       );
 
       // DEBUG: Show debug info AFTER status display
-      if (activeBlock) {
+      if (activeBlock && config.DEBUG_OUTPUT) {
         const projection = projectBlockUsage(activeBlock);
         const blockTokens = getTotalTokens(activeBlock.tokenCounts);
         const burnRate = calculateBurnRate(activeBlock);
@@ -343,9 +361,6 @@ async function main() {
         console.log(
           `  Tokens/min (indicator): ${formatTokensCompact(Math.round(tokensPerMinute))}`,
         );
-        console.log(
-          `  Cost/hour: $${burnRate?.costPerHour?.toFixed(2) || "null"}`,
-        );
       }
     } catch (error) {
       console.log(
@@ -354,7 +369,9 @@ async function main() {
       );
     }
 
-    await new Promise((resolve) => setTimeout(resolve, REFRESH_INTERVAL_MS));
+    await new Promise((resolve) =>
+      setTimeout(resolve, config.REFRESH_INTERVAL_MS),
+    );
   }
 }
 
