@@ -2,7 +2,7 @@
 
 A Claude Code usage status monitor that provides real-time monitoring of Claude API usage, context consumption, and token burn rates. While it creates concise status line style output for general use, it was specifically created to allow monitoring Claude Code context and usage when using it as an External Agent via ACP (Agent Client Protocol) in Zed Editor.
 
-![ccstat in action](assets/screenshot.png)
+![ccstat in action](https://github.com/PeteHalsted/ccstat/blob/main/assets/screenshot.png)
 
 ## Installation
 
