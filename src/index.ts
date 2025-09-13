@@ -9,7 +9,6 @@ import {
   type ParallelContextSessionData,
 } from "./data-loader-simple.js";
 import { identifySessionBlocks } from "./session-blocks-simple.js";
-import { readOnlyDataAccess } from "./data-access.js";
 import {
   loadConfig,
   getEffectiveTokenLimit,

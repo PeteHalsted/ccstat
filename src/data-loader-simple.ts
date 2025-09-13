@@ -1,7 +1,7 @@
 // COPIED EXACTLY FROM CCUSAGE data-loader.ts
 import fs from "node:fs";
 import path from "node:path";
-import { homedir } from "node:os";
+import { USER_HOME_DIR } from "./constants.js";
 import { z } from "zod";
 
 // Copy ccusage schemas exactly
@@ -168,7 +168,7 @@ export async function loadUsageEntries(
     );
   }
 
-  const home = homedir();
+  const home = USER_HOME_DIR;
   const claudeDirs = [
     path.join(home, ".config", "claude", "projects"),
     path.join(home, ".claude", "projects"),

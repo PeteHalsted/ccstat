@@ -6,9 +6,9 @@
  * DO NOT modify this unless the Claude file format changes.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { homedir } from 'node:os';
+import fs from "node:fs";
+import path from "node:path";
+import { USER_HOME_DIR } from "./constants.js";
 
 interface ContextUsageData {
   timestamp: string;
@@ -37,11 +37,13 @@ class ContextDataReader {
   private readonly claudeDirs: readonly string[];
 
   constructor() {
-    this.homeDir = homedir();
-    this.claudeDirs = Object.freeze([
-      path.join(this.homeDir, '.config', 'claude', 'projects'),
-      path.join(this.homeDir, '.claude', 'projects')
-    ].filter(dir => fs.existsSync(dir)));
+    this.homeDir = USER_HOME_DIR;
+    this.claudeDirs = Object.freeze(
+      [
+        path.join(this.homeDir, ".config", "claude", "projects"),
+        path.join(this.homeDir, ".claude", "projects"),
+      ].filter((dir) => fs.existsSync(dir)),
+    );
   }
 
   /**
@@ -56,12 +58,14 @@ class ContextDataReader {
       for (const project of projects) {
         const projectPath = path.join(claudeDir, project);
         if (fs.statSync(projectPath).isDirectory()) {
-          const files = fs.readdirSync(projectPath).filter(f => f.endsWith('.jsonl'));
+          const files = fs
+            .readdirSync(projectPath)
+            .filter((f) => f.endsWith(".jsonl"));
           for (const file of files) {
             const sessionId = project; // Use project as session ID
             const filePath = path.join(projectPath, file);
-            const content = fs.readFileSync(filePath, 'utf8');
-            const lines = content.trim().split('\n');
+            const content = fs.readFileSync(filePath, "utf8");
+            const lines = content.trim().split("\n");
 
             let cacheReadTokens = 0;
             let inputTokens = 0;
@@ -76,7 +80,10 @@ class ContextDataReader {
 
                   // For context calculation - use most recent cache_read_tokens
                   // This is the EXACT logic that must remain unchanged
-                  if (usage.cache_read_input_tokens > 0 && timestamp >= mostRecentTimestamp) {
+                  if (
+                    usage.cache_read_input_tokens > 0 &&
+                    timestamp >= mostRecentTimestamp
+                  ) {
                     cacheReadTokens = usage.cache_read_input_tokens;
                     mostRecentTimestamp = timestamp;
                   }
@@ -90,12 +97,14 @@ class ContextDataReader {
             }
 
             if (cacheReadTokens > 0 || inputTokens > 0) {
-              sessions.push(Object.freeze({
-                sessionId,
-                cacheReadTokens,
-                inputTokens,
-                mostRecentTimestamp
-              }));
+              sessions.push(
+                Object.freeze({
+                  sessionId,
+                  cacheReadTokens,
+                  inputTokens,
+                  mostRecentTimestamp,
+                }),
+              );
             }
           }
         }
@@ -108,7 +117,10 @@ class ContextDataReader {
   /**
    * Find context session by path - isolated logic for context only
    */
-  findContextSessionByPath(sessions: readonly ContextSessionData[], currentPath: string): ContextSessionData | null {
+  findContextSessionByPath(
+    sessions: readonly ContextSessionData[],
+    currentPath: string,
+  ): ContextSessionData | null {
     const pathParts = currentPath.split("/");
 
     // Try current directory and walk up the tree

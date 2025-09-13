@@ -45,18 +45,3 @@ export const DEFAULT_SESSION_DURATION_HOURS = 5;
  * Maximum context tokens for Claude
  */
 export const MAX_CONTEXT_TOKENS = 200000;
-
-/**
- * Maximum block minutes (5 hours)
- */
-export const MAX_BLOCK_MINUTES = 300;
-
-/**
- * Projected token limit for quota warnings (adjusted to match our data aggregation)
- */
-export const PROJECTED_TOKEN_LIMIT = 101685800;
-
-/**
- * Threshold percentage for showing usage warnings (80%)
- */
-export const BLOCKS_WARNING_THRESHOLD = 0.8;

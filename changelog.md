@@ -4,6 +4,15 @@ All notable changes to ccstat will be documented in this file.
 
 ## [Unreleased]
 
+### 🧹 Code Cleanup
+- **Dead Code Removal**: Eliminated orphaned constants, unused imports, and completely unused files
+  - Removed `MAX_BLOCK_MINUTES`, `BLOCKS_WARNING_THRESHOLD`, and `PROJECTED_TOKEN_LIMIT` constants (unused)
+  - Deleted orphaned files: `src/data-access.ts` and `src/context-calculator.ts` (no imports found)
+  - Cleaned up duplicate `homedir` imports across multiple files
+  - Consolidated all files to use `USER_HOME_DIR` from constants for consistency
+- **Import Optimization**: Streamlined import structure with no duplicates or unused imports
+- **Maintainability**: Cleaner, more maintainable codebase with preserved functionality
+
 ### ⚡ Performance Improvements
 - **Major Performance Optimization**: Eliminated duplicate file reading by implementing parallel context calculation that integrates context data processing with block data processing
 - System now reads usage files once instead of twice, significantly improving startup and refresh performance
