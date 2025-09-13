@@ -8,6 +8,12 @@ import { loadUsageEntries } from "./data-loader-simple.js";
 import { identifySessionBlocks } from "./session-blocks-simple.js";
 import { readOnlyDataAccess } from "./data-access.js";
 import { contextDataReader } from "./context-data-reader.js";
+import {
+  loadConfig,
+  getEffectiveTokenLimit,
+  updateObservedMaxIfHigher,
+  type CcstatConfig,
+} from "./config.js";
 import { USER_HOME_DIR } from "./constants.js";
 
 const execPromise = promisify(exec);
@@ -38,6 +44,17 @@ const progressBar = (pct: number, width = 20) => {
   const filledWidth = Math.round((clampedPct / 100) * width);
   const emptyWidth = width - filledWidth;
   return "=".repeat(filledWidth) + "-".repeat(emptyWidth);
+};
+
+// ---- Number Formatting Helper ----
+const formatTokensCompact = (tokens: number): string => {
+  if (tokens >= 1000000) {
+    return (tokens / 1000000).toFixed(1) + "M";
+  } else if (tokens >= 1000) {
+    return (tokens / 1000).toFixed(1) + "k";
+  } else {
+    return tokens.toString();
+  }
 };
 
 // ---- Git Helper ----
@@ -142,6 +159,12 @@ async function main() {
     // File doesn't exist yet, which is fine
   }
 
+  // Load ccstat.json configuration
+  let config = await loadConfig();
+  console.log(
+    `📊 Config loaded - TOKEN_LIMIT: ${config.TOKEN_LIMIT.toLocaleString()}, OBSERVED_MAX: ${config.OBSERVED_MAX_TOKEN.toLocaleString()}, USE_OBSERVED_IF_HIGHER: ${config.USE_OBSERVED_IF_HIGHER}`,
+  );
+
   while (true) {
     try {
       // Use ccusage's exact data loading logic for blocks, but keep isolated context calculation
@@ -171,7 +194,7 @@ async function main() {
 
       // Constants copied from ccusage
       const MAX_BLOCK_MINUTES = 300;
-      const PROJECTED_TOKEN_LIMIT = 101685800;
+      const EFFECTIVE_TOKEN_LIMIT = getEffectiveTokenLimit(config);
 
       // --- Extract and Format Data ---
       let timeDisplay = colorize("yellow", "⏰ N/A");
@@ -203,19 +226,22 @@ async function main() {
           burnRateStatus = colorize("yellow", "⚠️ (Moderate)");
 
         const tokensPerMin = Math.round(burnRate?.tokensPerMinute || 0);
-        burnRateDisplay = `${tokensPerMin.toLocaleString()} tokens/min`;
+        burnRateDisplay = `${formatTokensCompact(tokensPerMin)} tokens/min`;
 
         const blockTotalTokens = getTotalTokens(activeBlock.tokenCounts);
         const usedPct = Math.round(
-          (blockTotalTokens * 100) / PROJECTED_TOKEN_LIMIT,
+          (blockTotalTokens * 100) / EFFECTIVE_TOKEN_LIMIT,
         );
         usedDisplay = `Used: ${usedPct}%`;
 
         const projectedTokens = projection?.totalTokens || 0;
         const projectedPct = Math.round(
-          (projectedTokens * 100) / PROJECTED_TOKEN_LIMIT,
+          (projectedTokens * 100) / EFFECTIVE_TOKEN_LIMIT,
         );
         projectedDisplay = `Projected: ${projectedPct}%`;
+
+        // Update observed max if this block is higher
+        config = await updateObservedMaxIfHigher(config, blockTotalTokens);
 
         const timeColor =
           timePct >= 90 ? "red" : timePct >= 80 ? "yellow" : "green";
@@ -295,25 +321,27 @@ async function main() {
         );
         console.log(`  TOTAL BLOCK: ${blockTokens.toLocaleString()}`);
         console.log(`  Entries: ${activeBlock.entries.length}`);
-        console.log(`  Token Limit: ${PROJECTED_TOKEN_LIMIT.toLocaleString()}`);
         console.log(
-          `  Usage %: ${Math.round((blockTokens * 100) / PROJECTED_TOKEN_LIMIT)}%`,
+          `  Token Limit: ${EFFECTIVE_TOKEN_LIMIT.toLocaleString()} ${config.USE_OBSERVED_IF_HIGHER && config.OBSERVED_MAX_TOKEN > config.TOKEN_LIMIT ? "(OBSERVED)" : "(CONFIGURED)"}`,
+        );
+        console.log(
+          `  Usage %: ${Math.round((blockTokens * 100) / EFFECTIVE_TOKEN_LIMIT)}%`,
         );
         if (projection) {
           console.log(
             `  Projected Total: ${projection.totalTokens.toLocaleString()}`,
           );
           console.log(
-            `  Projected %: ${Math.round((projection.totalTokens * 100) / PROJECTED_TOKEN_LIMIT)}%`,
+            `  Projected %: ${Math.round((projection.totalTokens * 100) / EFFECTIVE_TOKEN_LIMIT)}%`,
           );
         }
 
         console.log(`\nDEBUG BURN RATE:`);
         console.log(
-          `  Tokens/min: ${burnRate?.tokensPerMinute?.toLocaleString() || "null"}`,
+          `  Tokens/min: ${burnRate?.tokensPerMinute ? formatTokensCompact(Math.round(burnRate.tokensPerMinute)) : "null"}`,
         );
         console.log(
-          `  Tokens/min (indicator): ${tokensPerMinute.toLocaleString()}`,
+          `  Tokens/min (indicator): ${formatTokensCompact(Math.round(tokensPerMinute))}`,
         );
         console.log(
           `  Cost/hour: $${burnRate?.costPerHour?.toFixed(2) || "null"}`,
